@@ -67,7 +67,13 @@ public class DMSPermissionRepository extends JpaRepository<DMSPermission> {
         permission =
             findOrCreate(
                 "perm.dms.file.__full__",
-                "(self.permissions.user = ? OR self.permissions.group = ?) AND self.permissions.permission.canCreate = true",
+                "self.id = ANY(SELECT x.id FROM DMSFile x "
+                    + "LEFT JOIN x.permissions x_permissions "
+                    + "LEFT JOIN x_permissions.user x_permissions_user "
+                    + "LEFT JOIN x_permissions.group x_permissions_group "
+                    + "LEFT JOIN x_permissions.permission x_permissions_permission "
+                    + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
+                    + "AND x_permissions_permission.canCreate = true)",
                 "__user__, __user__.group");
         permission.setCanCreate(true);
         permission.setCanRead(true);
@@ -78,7 +84,13 @@ public class DMSPermissionRepository extends JpaRepository<DMSPermission> {
         permission =
             findOrCreate(
                 "perm.dms.file.__write__",
-                "(self.permissions.user = ? OR self.permissions.group = ?) AND self.permissions.permission.canWrite = true",
+                "self.id = ANY(SELECT x.id FROM DMSFile x "
+                    + "LEFT JOIN x.permissions x_permissions "
+                    + "LEFT JOIN x_permissions.user x_permissions_user "
+                    + "LEFT JOIN x_permissions.group x_permissions_group "
+                    + "LEFT JOIN x_permissions.permission x_permissions_permission "
+                    + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
+                    + "AND x_permissions_permission.canWrite = true)",
                 "__user__, __user__.group");
         permission.setCanCreate(false);
         permission.setCanRead(true);
@@ -89,7 +101,13 @@ public class DMSPermissionRepository extends JpaRepository<DMSPermission> {
         permission =
             findOrCreate(
                 "perm.dms.file.__read__",
-                "(self.permissions.user = ? OR self.permissions.group = ?) AND self.permissions.permission.canRead = true",
+                "self.id = ANY(SELECT x.id FROM DMSFile x "
+                    + "LEFT JOIN x.permissions x_permissions "
+                    + "LEFT JOIN x_permissions.user x_permissions_user "
+                    + "LEFT JOIN x_permissions.group x_permissions_group "
+                    + "LEFT JOIN x_permissions.permission x_permissions_permission "
+                    + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
+                    + "AND x_permissions_permission.canRead = true)",
                 "__user__, __user__.group");
         permission.setCanCreate(false);
         permission.setCanRead(true);
@@ -112,7 +130,13 @@ public class DMSPermissionRepository extends JpaRepository<DMSPermission> {
     final Permission __parent__ =
         findOrCreate(
             "perm.dms.file.__parent__",
-            "(self.parent.permissions.user = ? OR self.parent.permissions.group = ?) AND self.parent.permissions.permission.canRead = true",
+            "self.parent = ANY(SELECT x.id FROM DMSFile x "
+                + "LEFT JOIN x.permissions x_permissions "
+                + "LEFT JOIN x_permissions.user x_permissions_user "
+                + "LEFT JOIN x_permissions.group x_permissions_group "
+                + "LEFT JOIN x_permissions.permission x_permissions_permission "
+                + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
+                + "AND x_permissions_permission.canRead = true)",
             "__user__, __user__.group");
 
     final Permission __perm_full__ =
