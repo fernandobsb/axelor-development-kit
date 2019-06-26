@@ -53,6 +53,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import javax.inject.Inject;
 import javax.persistence.PersistenceException;
 import org.apache.shiro.authz.UnauthorizedException;
@@ -165,64 +166,77 @@ public class DMSFileRepository extends JpaRepository<DMSFile> {
     }
 
     // if not an attachment or has parent, do nothing
-    if (parent != null || related == null) {
-      return super.save(entity);
+    if (parent == null && related != null) {
+      // create parent folders
+
+      Mapper mapper = Mapper.of(related.getClass());
+      String homeName = null;
+      try {
+        homeName = mapper.getNameField().get(related).toString();
+      } catch (Exception e) {
+      }
+      if (homeName == null) {
+        homeName = Strings.padStart("" + related.getId(), 5, '0');
+      }
+
+      DMSFile dmsRoot =
+          all()
+              .filter(
+                  "(self.relatedId is null OR self.relatedId = 0) AND self.relatedModel = ? and self.isDirectory = true",
+                  entity.getRelatedModel())
+              .fetchOne();
+
+      final Inflector inflector = Inflector.getInstance();
+
+      if (dmsRoot == null) {
+        dmsRoot = new DMSFile();
+        dmsRoot.setFileName(
+            inflector.pluralize(inflector.humanize(related.getClass().getSimpleName())));
+        dmsRoot.setRelatedModel(entity.getRelatedModel());
+        dmsRoot.setIsDirectory(true);
+        dmsRoot = save(dmsRoot); // should get id before its child
+      }
+
+      DMSFile dmsHome =
+          all()
+              .filter(
+                  ""
+                      + "self.relatedId = :id AND self.relatedModel = :model AND self.isDirectory = true AND "
+                      + "self.parent.relatedModel = :model AND "
+                      + "(self.parent.relatedId is null OR self.parent.relatedId = 0)")
+              .bind("id", entity.getRelatedId())
+              .bind("model", entity.getRelatedModel())
+              .fetchOne();
+
+      if (dmsHome == null) {
+        dmsHome = new DMSFile();
+        dmsHome.setFileName(homeName);
+        dmsHome.setRelatedId(entity.getRelatedId());
+        dmsHome.setRelatedModel(entity.getRelatedModel());
+        dmsHome.setParent(dmsRoot);
+        dmsHome.setIsDirectory(true);
+        dmsHome = save(dmsHome); // should get id before its child
+      }
+
+      entity.setParent(dmsHome);
     }
 
-    // create parent folders
-
-    Mapper mapper = Mapper.of(related.getClass());
-    String homeName = null;
-    try {
-      homeName = mapper.getNameField().get(related).toString();
-    } catch (Exception e) {
+    if (entity.getVersion() == null || entity.getVersion() == 0) {
+      copyParentPermissions(entity);
     }
-    if (homeName == null) {
-      homeName = Strings.padStart("" + related.getId(), 5, '0');
-    }
-
-    DMSFile dmsRoot =
-        all()
-            .filter(
-                "(self.relatedId is null OR self.relatedId = 0) AND self.relatedModel = ? and self.isDirectory = true",
-                entity.getRelatedModel())
-            .fetchOne();
-
-    final Inflector inflector = Inflector.getInstance();
-
-    if (dmsRoot == null) {
-      dmsRoot = new DMSFile();
-      dmsRoot.setFileName(
-          inflector.pluralize(inflector.humanize(related.getClass().getSimpleName())));
-      dmsRoot.setRelatedModel(entity.getRelatedModel());
-      dmsRoot.setIsDirectory(true);
-      dmsRoot = super.save(dmsRoot); // should get id before it's child
-    }
-
-    DMSFile dmsHome =
-        all()
-            .filter(
-                ""
-                    + "self.relatedId = :id AND self.relatedModel = :model AND self.isDirectory = true AND "
-                    + "self.parent.relatedModel = :model AND "
-                    + "(self.parent.relatedId is null OR self.parent.relatedId = 0)")
-            .bind("id", entity.getRelatedId())
-            .bind("model", entity.getRelatedModel())
-            .fetchOne();
-
-    if (dmsHome == null) {
-      dmsHome = new DMSFile();
-      dmsHome.setFileName(homeName);
-      dmsHome.setRelatedId(entity.getRelatedId());
-      dmsHome.setRelatedModel(entity.getRelatedModel());
-      dmsHome.setParent(dmsRoot);
-      dmsHome.setIsDirectory(true);
-      dmsHome = super.save(dmsHome); // should get id before it's child
-    }
-
-    entity.setParent(dmsHome);
 
     return super.save(entity);
+  }
+
+  private void copyParentPermissions(DMSFile entity) {
+    Optional.ofNullable(entity.getParent())
+        .map(DMSFile::getPermissions)
+        .ifPresent(
+            permissions ->
+                permissions
+                    .stream()
+                    .map(permission -> dmsPermissions.copy(permission, false))
+                    .forEach(entity::addPermission));
   }
 
   @Override
