@@ -25,6 +25,7 @@ import com.axelor.db.JpaRepository;
 import com.axelor.dms.db.DMSFile;
 import com.axelor.dms.db.DMSPermission;
 import com.axelor.i18n.I18n;
+import com.google.inject.persist.Transactional;
 import javax.inject.Inject;
 import javax.persistence.PersistenceException;
 
@@ -36,17 +37,154 @@ public class DMSPermissionRepository extends JpaRepository<DMSPermission> {
     super(DMSPermission.class);
   }
 
+  @Transactional
+  public void createPermissions() {
+    findOrCreateFull();
+    findOrCreateWrite();
+    findOrCreateRead();
+    findOrCreateParent();
+    findOrCreateSelf();
+    findOrCreateCreate();
+    findOrCreateMeta();
+    findOrCreatePermFull();
+  }
+
   private Permission findOrCreate(String name, String... args) {
     Permission perm = perms.findByName(name);
+
     if (perm == null) {
       perm = new Permission();
       perm.setName(name);
-      perm.setCondition(args.length > 0 ? args[0] : null);
-      perm.setConditionParams(args.length > 1 ? args[1] : null);
       perm.setObject(args.length > 2 ? args[2] : DMSFile.class.getName());
       perm = perms.save(perm);
     }
+
+    perm.setCondition(args.length > 0 ? args[0] : null);
+    perm.setConditionParams(args.length > 1 ? args[1] : null);
+
     return perm;
+  }
+
+  private Permission findOrCreateFull() {
+    final Permission permission =
+        findOrCreate(
+            "perm.dms.file.__full__",
+            "self.id = ANY(SELECT x.id FROM DMSFile x "
+                + "LEFT JOIN x.permissions x_permissions "
+                + "LEFT JOIN x_permissions.user x_permissions_user "
+                + "LEFT JOIN x_permissions.group x_permissions_group "
+                + "LEFT JOIN x_permissions.permission x_permissions_permission "
+                + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
+                + "AND x_permissions_permission.canCreate = true)",
+            "__user__, __user__.group");
+    permission.setCanCreate(true);
+    permission.setCanRead(true);
+    permission.setCanWrite(true);
+    permission.setCanRemove(true);
+    return permission;
+  }
+
+  private Permission findOrCreateWrite() {
+    final Permission permission =
+        findOrCreate(
+            "perm.dms.file.__write__",
+            "self.id = ANY(SELECT x.id FROM DMSFile x "
+                + "LEFT JOIN x.permissions x_permissions "
+                + "LEFT JOIN x_permissions.user x_permissions_user "
+                + "LEFT JOIN x_permissions.group x_permissions_group "
+                + "LEFT JOIN x_permissions.permission x_permissions_permission "
+                + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
+                + "AND x_permissions_permission.canWrite = true)",
+            "__user__, __user__.group");
+    permission.setCanCreate(false);
+    permission.setCanRead(true);
+    permission.setCanWrite(true);
+    permission.setCanRemove(true);
+    return permission;
+  }
+
+  private Permission findOrCreateRead() {
+    final Permission permission =
+        findOrCreate(
+            "perm.dms.file.__read__",
+            "self.id = ANY(SELECT x.id FROM DMSFile x "
+                + "LEFT JOIN x.permissions x_permissions "
+                + "LEFT JOIN x_permissions.user x_permissions_user "
+                + "LEFT JOIN x_permissions.group x_permissions_group "
+                + "LEFT JOIN x_permissions.permission x_permissions_permission "
+                + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
+                + "AND x_permissions_permission.canRead = true)",
+            "__user__, __user__.group");
+    permission.setCanCreate(false);
+    permission.setCanRead(true);
+    permission.setCanWrite(false);
+    permission.setCanRemove(false);
+    return permission;
+  }
+
+  private Permission findOrCreateParent() {
+    final Permission permission =
+        findOrCreate(
+            "perm.dms.file.__parent__",
+            "self.parent = ANY(SELECT x.id FROM DMSFile x "
+                + "LEFT JOIN x.permissions x_permissions "
+                + "LEFT JOIN x_permissions.user x_permissions_user "
+                + "LEFT JOIN x_permissions.group x_permissions_group "
+                + "LEFT JOIN x_permissions.permission x_permissions_permission "
+                + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
+                + "AND x_permissions_permission.canRead = true)",
+            "__user__, __user__.group");
+    permission.setCanCreate(false);
+    permission.setCanRead(true);
+    permission.setCanWrite(false);
+    permission.setCanRemove(false);
+    return permission;
+  }
+
+  private Permission findOrCreateSelf() {
+    final Permission permission =
+        findOrCreate(
+            "perm.dms.file.__self__", "self.createdBy = ?", "__user__", DMSFile.class.getName());
+    permission.setCanCreate(false);
+    permission.setCanRead(true);
+    permission.setCanWrite(true);
+    permission.setCanRemove(true);
+    return permission;
+  }
+
+  private Permission findOrCreateCreate() {
+    final Permission permission =
+        findOrCreate("perm.dms.__create__", null, null, "com.axelor.dms.db.*");
+    permission.setCanCreate(true);
+    permission.setCanRead(false);
+    permission.setCanWrite(false);
+    permission.setCanRemove(false);
+
+    return permission;
+  }
+
+  private Permission findOrCreateMeta() {
+    final Permission permission =
+        findOrCreate("perm.meta.file.__create__", null, null, "com.axelor.meta.db.MetaFile");
+    permission.setCanCreate(true);
+    permission.setCanRead(false);
+    permission.setCanWrite(false);
+    permission.setCanRemove(false);
+    return permission;
+  }
+
+  private Permission findOrCreatePermFull() {
+    final Permission permission =
+        findOrCreate(
+            "perm.dms.perm.__full__",
+            "self.createdBy = ? OR ((self.user = ? OR self.group = ?) AND self.value = 'FULL')",
+            "__user__, __user__, __user__.group",
+            DMSPermission.class.getName());
+    permission.setCanCreate(true);
+    permission.setCanRead(true);
+    permission.setCanWrite(true);
+    permission.setCanRemove(true);
+    return permission;
   }
 
   @Override
@@ -64,55 +202,13 @@ public class DMSPermissionRepository extends JpaRepository<DMSPermission> {
 
     switch (entity.getValue()) {
       case "FULL":
-        permission =
-            findOrCreate(
-                "perm.dms.file.__full__",
-                "self.id = ANY(SELECT x.id FROM DMSFile x "
-                    + "LEFT JOIN x.permissions x_permissions "
-                    + "LEFT JOIN x_permissions.user x_permissions_user "
-                    + "LEFT JOIN x_permissions.group x_permissions_group "
-                    + "LEFT JOIN x_permissions.permission x_permissions_permission "
-                    + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
-                    + "AND x_permissions_permission.canCreate = true)",
-                "__user__, __user__.group");
-        permission.setCanCreate(true);
-        permission.setCanRead(true);
-        permission.setCanWrite(true);
-        permission.setCanRemove(true);
+        permission = findOrCreateFull();
         break;
       case "WRITE":
-        permission =
-            findOrCreate(
-                "perm.dms.file.__write__",
-                "self.id = ANY(SELECT x.id FROM DMSFile x "
-                    + "LEFT JOIN x.permissions x_permissions "
-                    + "LEFT JOIN x_permissions.user x_permissions_user "
-                    + "LEFT JOIN x_permissions.group x_permissions_group "
-                    + "LEFT JOIN x_permissions.permission x_permissions_permission "
-                    + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
-                    + "AND x_permissions_permission.canWrite = true)",
-                "__user__, __user__.group");
-        permission.setCanCreate(false);
-        permission.setCanRead(true);
-        permission.setCanWrite(true);
-        permission.setCanRemove(true);
+        permission = findOrCreateWrite();
         break;
       case "READ":
-        permission =
-            findOrCreate(
-                "perm.dms.file.__read__",
-                "self.id = ANY(SELECT x.id FROM DMSFile x "
-                    + "LEFT JOIN x.permissions x_permissions "
-                    + "LEFT JOIN x_permissions.user x_permissions_user "
-                    + "LEFT JOIN x_permissions.group x_permissions_group "
-                    + "LEFT JOIN x_permissions.permission x_permissions_permission "
-                    + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
-                    + "AND x_permissions_permission.canRead = true)",
-                "__user__, __user__.group");
-        permission.setCanCreate(false);
-        permission.setCanRead(true);
-        permission.setCanWrite(false);
-        permission.setCanRemove(false);
+        permission = findOrCreateRead();
         break;
     }
 
@@ -120,56 +216,11 @@ public class DMSPermissionRepository extends JpaRepository<DMSPermission> {
       return super.save(entity);
     }
 
-    final Permission __self__ =
-        findOrCreate(
-            "perm.dms.file.__self__", "self.createdBy = ?", "__user__", DMSFile.class.getName());
-    final Permission __create__ =
-        findOrCreate("perm.dms.__create__", null, null, "com.axelor.dms.db.*");
-    final Permission __meta__ =
-        findOrCreate("perm.meta.file.__create__", null, null, "com.axelor.meta.db.MetaFile");
-    final Permission __parent__ =
-        findOrCreate(
-            "perm.dms.file.__parent__",
-            "self.parent = ANY(SELECT x.id FROM DMSFile x "
-                + "LEFT JOIN x.permissions x_permissions "
-                + "LEFT JOIN x_permissions.user x_permissions_user "
-                + "LEFT JOIN x_permissions.group x_permissions_group "
-                + "LEFT JOIN x_permissions.permission x_permissions_permission "
-                + "WHERE (x_permissions_user = ? OR x_permissions_group = ?) "
-                + "AND x_permissions_permission.canRead = true)",
-            "__user__, __user__.group");
-
-    final Permission __perm_full__ =
-        findOrCreate(
-            "perm.dms.perm.__full__",
-            "self.createdBy = ? OR ((self.user = ? OR self.group = ?) AND self.value = 'FULL')",
-            "__user__, __user__, __user__.group",
-            DMSPermission.class.getName());
-
-    __perm_full__.setCanCreate(true);
-    __perm_full__.setCanRead(true);
-    __perm_full__.setCanWrite(true);
-    __perm_full__.setCanRemove(true);
-
-    __parent__.setCanCreate(false);
-    __parent__.setCanRead(true);
-    __parent__.setCanWrite(false);
-    __parent__.setCanRemove(false);
-
-    __self__.setCanCreate(false);
-    __self__.setCanRead(true);
-    __self__.setCanWrite(true);
-    __self__.setCanRemove(true);
-
-    __create__.setCanCreate(true);
-    __create__.setCanRead(false);
-    __create__.setCanWrite(false);
-    __create__.setCanRemove(false);
-
-    __meta__.setCanCreate(true);
-    __meta__.setCanRead(false);
-    __meta__.setCanWrite(false);
-    __meta__.setCanRemove(false);
+    final Permission __self__ = findOrCreateSelf();
+    final Permission __create__ = findOrCreateCreate();
+    final Permission __meta__ = findOrCreateMeta();
+    final Permission __parent__ = findOrCreateParent();
+    final Permission __perm_full__ = findOrCreatePermFull();
 
     if (user != null) {
       user.addPermission(permission);

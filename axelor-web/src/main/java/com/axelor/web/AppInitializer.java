@@ -20,6 +20,8 @@ package com.axelor.web;
 import com.axelor.app.AppSettings;
 import com.axelor.db.search.SearchService;
 import com.axelor.db.tenants.TenantModule;
+import com.axelor.dms.db.repo.DMSPermissionRepository;
+import com.axelor.inject.Beans;
 import com.axelor.meta.loader.ModuleManager;
 import com.axelor.quartz.JobRunner;
 import javax.inject.Inject;
@@ -72,6 +74,8 @@ public class AppInitializer extends HttpServlet {
     } catch (Exception e) {
       LOGGER.error(e.getMessage(), e);
     }
+
+    Beans.get(DMSPermissionRepository.class).createPermissions();
 
     LOGGER.info("Ready to serve...");
   }
